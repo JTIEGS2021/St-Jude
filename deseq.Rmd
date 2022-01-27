@@ -1,0 +1,191 @@
+# Load Libraries
+```{r }
+library(tidyverse)
+library(Rsubread)
+library(BiocManager)
+library(Rsamtools)
+library(DESeq2)
+library(readxl)
+library(ggplot2)
+```
+
+```{r }
+fcounts <- readRDS("./dat/fcount_hg19_final.rds")
+
+## Create the highest frequency assigned labels from fcounts stats
+stats <- fcounts$stat %>%
+    pivot_wider(names_from = "Status",
+                      values_from = starts_with("SJC")) %>%
+    pivot_longer(everything(),
+                 names_to = c("id","meas"),
+                 names_sep = ".bam_",
+                 values_to = "val") %>%
+    group_by(`id`) %>%
+    mutate(assign_freq =  ifelse(meas == "Assigned", val/sum(val), NA)) %>%
+    filter(!is.na(assign_freq)) %>%
+    ungroup() %>%
+    mutate(sjc_id = str_extract(id, "SJCBF...")) %>%
+    group_by(`sjc_id`) %>%
+    mutate(high_align = ifelse(assign_freq == max(assign_freq), TRUE, FALSE))
+
+
+## Collect Count Matrix
+matrix <- as.data.frame(fcounts$counts) %>%
+    rownames_to_column("GeneID")
+
+## Join Gene Characteristics to Count Matrix
+count <- fcounts$annotation %>%
+    mutate(GeneID =  as.character(GeneID)) %>%
+    left_join(matrix, by = "GeneID")
+
+## Parse name Identifiers for merge
+names <- tibble(names =  names(count[-1:-6])) %>%
+    mutate(ID = map_chr(names,  ~ str_split(., "_")[[1]][1]))
+
+## Read in Sample Mutations
+sample_mut <-  read_xlsx("./dat/samples_mutations.xlsx") %>%
+    select(-"...1")
+
+## Merge the sample set with the samples mutations
+## NOTE this will include multiple runs for a handful of samples
+col_dat <- names %>%
+    left_join(sample_mut, by = "ID") %>%
+    mutate(names =  str_remove(names, ".bam")) %>%
+    left_join(stats %>%
+              ungroup() %>% 
+              select(-c("sjc_id", "meas")),
+              by = c("names" =  "id"))
+
+## Composite Secondary Mutation Variable
+col_dat_final <- col_dat %>%
+    mutate(coh_mut =  ifelse(SMC3 == "som", "SMC3", NA)) %>%
+    mutate(coh_mut =  ifelse(SMC1A == "som", paste(coh_mut, "SMC1A"), coh_mut)) %>%
+    mutate(coh_mut =  ifelse(RAD21 == "som", paste(coh_mut, "RAD21"), coh_mut)) %>%
+    mutate(coh_mut = str_trim(str_remove(coh_mut, "NA"))) %>%
+    mutate(coh_mut_any = ifelse(!is.na(coh_mut), "mutation", "none")) %>%
+    mutate(coh_mut =  ifelse(is.na(coh_mut), "none", coh_mut))
+
+```
+
+## Experiment Design 
+
+Factors to consider 
+- Sex
+- AGE (age_b)
+- Fusion (AE or INV(16))
+- Secondary Mutations (SMC3, SMC1A, RAD21)
+
+Variable Combinations
+- `Fusion` AE vs INV16
+- `coh_mut` SMC3 vs SMC1A vs RAD21
+- `coh_mut_any` coh_mut vs non_coh_mut
+- `Fusion + coh_mut` AE + coh_mut(*) vs INV16 + coh_mut(*)
+- `Fusion + coh_mut_any` AE + coh_mut vs AE + non_coh_mut ... (INV16)
+
+Other Considerations
+- Multiple runs included
+- Single run included (selecting highest alignmnet percent)
+
+```{r }
+## Fusion
+rownames(matrix) <- matrix$GeneID
+matrix <- matrix %>% select(-GeneID)
+
+dds <- DESeqDataSetFromMatrix(countData = matrix, 
+                              colData = col_dat_final,
+                              design = ~Fusion)
+
+## VST Transformation for Pre-DEA
+vsd <- vst(dds, blind = FALSE)
+head(assay(vsd),2)
+colData(vsd)
+
+library("pheatmap") 
+library("RColorBrewer")
+vsd$Fusion
+
+## heattmap
+png("heatmap_fusion.png", width = 800, height = 800)
+sampleDists <- dist(t(assay(vsd)))
+sampleDistMatrix <- as.matrix( sampleDists )
+rownames(sampleDistMatrix) <- paste( str_extract(vsd$names, "......."), vsd$Fusion, sep = "_" )
+colnames(sampleDistMatrix) <- NULL
+colors <- colorRampPalette( rev(brewer.pal(9, "Blues")) )(255)
+pheatmap(sampleDistMatrix,
+         clustering_distance_rows = sampleDists,
+         clustering_distance_cols = sampleDists,
+         col = colors)
+dev.off()
+
+## PCA
+png("pca_fusion.png", width = 800, height = 800)
+plotPCA(vsd, intgroup = c("Fusion"))
+dev.off()
+
+
+
+
+## Select genes with count data > 10
+keep <- rowSums(counts(dds)) >= 10
+dds <- dds[keep,]
+
+deseq <- DESeq(dds)
+res <- results(deseq)
+res
+
+resultsNames(deseq)
+resLFC <- lfcShrink(deseq, coef = 2, type = "apeglm")
+resLFC
+
+
+```
+##http://master.bioconductor.org/packages/release/workflows/vignettes/rnaseqGene/inst/doc/rnaseqGene.html#the-deseqdataset-object-sample-information-and-the-design-formula
+
+
+# Analyses of Secondary Mutations
+```{r }
+rownames(matrix) <- matrix$GeneID
+matrix <- matrix %>% select(-GeneID)
+
+## select only AE and compare cohesin mutation status (coh_mut)
+ae_col_dat <- col_dat_final %>% filter(Fusion == "AE")
+
+## remove matrix 
+ae_matrix <- matrix %>% select(ae_col_dat$names %>% paste0(".bam"))
+names(ae_matrix)
+
+dds <- DESeqDataSetFromMatrix(countData = ae_matrix, 
+                              colData = ae_col_dat,
+                              design = ~coh_mut)
+
+## VST Transformation for Pre-DEA
+vsd <- vst(dds, blind = FALSE)
+
+library("pheatmap") 
+library("RColorBrewer")
+vsd$Fusion
+ 
+## heattmap
+png("heatmap_ae_coh_mut.png", width = 800, height = 800)
+sampleDists <- dist(t(assay(vsd)))
+sampleDistMatrix <- as.matrix( sampleDists )
+rownames(sampleDistMatrix) <- paste( str_extract(vsd$names, "......."), vsd$coh_mut, sep = "_" )
+colnames(sampleDistMatrix) <- NULL
+colors <- colorRampPalette( rev(brewer.pal(9, "Blues")) )(255)
+pheatmap(sampleDistMatrix,
+         clustering_distance_rows = sampleDists,
+         clustering_distance_cols = sampleDists,
+         col = colors)
+dev.off()
+
+## PCA
+png("pca_ae_coh_mut.png", width = 800, height = 800)
+plotPCA(vsd, intgroup = c("coh_mut"))
+dev.off()
+
+
+```
+
+- email kirthi, which hiearhcical clustering metric is used
+- make decision on replicate samples
+- pull pca dimensions

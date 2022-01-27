@@ -1,0 +1,47 @@
+
+# Load Libraries
+```{r }
+library(tidyverse)
+library(Rsubread)
+library(BiocManager)
+library(Rsamtools)
+```
+
+```{r }
+x <- scanBam("/Volumes/Rao_Lab_1/st_jude/final_dat/EGAF00001280446/SJCBF006_D-D10M0WACXX.3.bam")
+```
+
+# Feature Counts
+
+```{r }
+## Create list of bam files from disk
+files <- list.files("/Volumes/Rao_Lab_1/st_jude/final_dat/", recursive =  TRUE, full.names = TRUE)
+files_bam <- files[grepl("bam$", files)]
+
+## Run fcount
+fcount_r <- featureCounts(
+    files = files_bam,
+    annot.inbuilt = "hg19",
+    isPairedEnd = TRUE,
+    verbose = TRUE,
+    nthreads = 10)
+getwd()
+write_rds(fcount_r, "./dat/fcount_r_hg19_final.rds")
+
+x <- read_rds("./dat/fcount_r_hg19_final.rds")
+names(x)
+
+as_tibble(x)
+```
+```{r }
+library(data.table)
+
+fl <- system.file("exdata", "ex1.bam", package =  "Rsamtools")
+testPairedEndBam("/Volumes/Rao_Lab_1/st_jude/final_dat/EGAF00001280495/SJCBF150_D-C1F88ACXX.8.bam")
+sastestPairedEndBam(fl)
+
+
+fcounts <- fread("~/Dropbox/St_Jude/dat/feature_counts.txt", header =  T, skip =  1)
+
+
+```

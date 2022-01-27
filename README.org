@@ -1,0 +1,79 @@
+#+title: St Jude README
+#+author: Jacob Tiegs
+
+* Tasks
+** TODO Create a full analytic workflow plan
+
+* Analytic Plan
+** Only "_D-D" samples selected
+- These are trranscriptome
+** RNA seq QC
+https://software.broadinstitute.org/cancer/cga/rna-seqc
+https://samtools.github.io/hts-specs/SAMv1.pdf
+- BAM header guide
+  
+https://ftp.ncbi.nih.gov/genomes/archive/old_genbank/Eukaryotes/vertebrates_mammals/Homo_sapiens/GRCh37/special_requests/
+- location of reference genomes
+*** samtools flagstat
+- scp/flagstat.sh
+- rst/flagstat_out.txt
+**** TODO qc report
+- primary report created, but requires a formatted output
+** GRCh37 hg19 is the reference genome used
+** Reads are Pair End
+- Verified
+  #+begin_src bash 
+    samtools view -c -f 1 /Volumes/Rao_Lab_1/st_jude/final_dat/EGAF00001280495/SJCBF150_D-C1F88ACXX.8.bam
+  #+end_src
+  http://broadinstitute.github.io/picard/explain-flags.html
+  - An output of not 0 indicates the reads are pair-ended
+  - view is an access, iterativeprogram on 
+
+  #+begin_src r
+    library(Rsamtools)
+    testPairedEndBam("/Volumes/Rao_Lab_1/st_jude/final_dat/EGAF00001280495/SJCBF150_D-C1F88ACXX.8.bam")
+  #+end_src
+
+ 
+** Feature Counts
+*** Rsubread
+**** DONE featurecounts
+saved as  "dat/fcount_r_hg19_final.rds"
+CLOSED: [2022-01-17 Mon 07:35]
+** Multiple Runs
+- Several of the samples have multiple runs
+  - Keep all runs into the DESEQ
+  - flag the fun with the better alignment
+  - run DESEQ multiple ways to account for the different runs
+    
+
+** Pre-DES Visualization
+HOLD
+https://hbctraining.github.io/Training-modules/planning_successful_rnaseq/lessons/sample_level_QC.html
+*** Normalization
+| Normalization method                                                                | Description                                                                                                                  | Accounted factors                    | Recommendations for use                                                                                             |
+| CPM (counts per million)                                                            | counts scaled by total number of reads                                                                                       | sequencing depth                     | gene count comparisons between replicates of the same samplegroup; NOT for within sample comparisons or DE analysis |
+| TPM (transcripts per kilobase million)                                              | counts per length of transcript (kb) per million reads mapped                                                                | sequencing depth and gene length     | gene count comparisons within a sample or between samples of the same sample group; NOT for DE analysis             |
+| RPKM/FPKM (reads/fragments per kilobase of exon per million reads/fragments mapped) | similar to TPM                                                                                                               | sequencing depth and gene length     | gene count comparisons between genes within a sample; NOT for between sample comparisons or DE analysis             |
+| DESeq2’s median of ratios [1]                                                       | counts divided by sample-specific size factors determined by median ratio of gene counts relative to geometric mean per gene | sequencing depth and RNA composition | gene count comparisons between samples and for DE analysis; NOT for within sample comparisons                       |
+| EdgeR’s trimmed mean of M values (TMM) [2]                                          | uses a weighted trimmed mean of the log expression ratios between samples                                                    | sequencing depth, RNA composition    | gene count comparisons between samples and for DE analysis; NOT for within sample comparisons                       |
+*** SAMPLE QC
+**** LOG2 PCA
+- visualize general comparison between samples
+
+** DESeq
+https://bioconductor.org/packages/release/bioc/vignettes/DESeq2/inst/doc/DESeq2.html
+Count matrix input
+
+featureCounts function 
+To use DESeqDataSetFromMatrix, the user should provide the
+- counts matrix + the information about the samples (the columns of the count matrix)
+  as a DataFrame 
+- the design formula.
+
+To demonstate the use of DESeqDataSetFromMatrix, we will read in count data from the pasilla package. We read in a count matrix, which we will name cts, and the sample information table, which we will name coldata. Further below we describe how to extract these objects from, e.g. featureCounts output.
+
+* Quick Notes
+** Emacs
+C-c C-v is insert a code block in RMD
+
